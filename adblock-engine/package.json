@@ -1,0 +1,30 @@
+{
+  "name": "arabic-adblock-engine",
+  "version": "1.0.0",
+  "description": "محرك حجب الإعلانات العربي - Arabic Privacy-Focused Ad-Blocker Engine",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.14.0",
+    "next": "^14.2.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "@types/react": "^18.3.3",
+    "prisma": "^5.14.0",
+    "tsx": "^4.15.5",
+    "typescript": "^5.4.5"
+  }
+}
