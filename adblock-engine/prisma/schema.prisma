@@ -1,0 +1,256 @@
+// ======================================================
+// مخطط قاعدة البيانات - محرك حجب الإعلانات العربي
+// AdBlock Engine - Prisma Schema
+// ======================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ======================================================
+// المستأجرون (Multi-tenant)
+// ======================================================
+model مستأجر {
+  معرف              String   @id @default(cuid()) @map("id")
+  الاسم             String   @map("name")
+  المفتاح_السري     String   @unique @map("api_key")
+  الخطة             خطة_الاشتراك @default(مجاني) @map("plan")
+  نشط               Boolean  @default(true) @map("is_active")
+  تاريخ_الإنشاء     DateTime @default(now()) @map("created_at")
+  تاريخ_التحديث     DateTime @updatedAt @map("updated_at")
+  الإعدادات         Json?    @map("settings")
+
+  قوائم_الحجب       قائمة_الحجب[]
+  سجلات_الانحراف    سجل_انحراف[]
+  مقاييس_الأداء     مقياس_أداء[]
+  مزامنات           سجل_مزامنة[]
+
+  @@map("tenant")
+}
+
+enum خطة_الاشتراك {
+  مجاني
+  احترافي
+  مؤسسي
+
+  @@map("subscription_plan")
+}
+
+// ======================================================
+// قوائم الحجب (Blocklists)
+// ======================================================
+model قائمة_الحجب {
+  معرف               String            @id @default(cuid()) @map("id")
+  معرف_المستأجر      String            @map("tenant_id")
+  الاسم              String            @map("name")
+  الوصف              String?           @map("description")
+  رابط_المصدر        String            @map("source_url")
+  النوع              نوع_القائمة       @map("list_type")
+  الحالة             حالة_القائمة      @default(معلقة) @map("status")
+  إصدار_EasyList     String?           @map("easylist_version")
+  عدد_القواعد        Int               @default(0) @map("rules_count")
+  حجم_الملف_بايت    BigInt            @default(0) @map("file_size_bytes")
+  آخر_مزامنة        DateTime?         @map("last_sync_at")
+  تكرار_المزامنة     Int               @default(3600) @map("sync_interval_seconds")
+  تاريخ_الإنشاء      DateTime          @default(now()) @map("created_at")
+  تاريخ_التحديث      DateTime          @updatedAt @map("updated_at")
+
+  المستأجر           مستأجر            @relation(fields: [معرف_المستأجر], references: [معرف])
+  القواعد            قاعدة_تصفية[]
+  مزامنات            سجل_مزامنة[]
+
+  @@index([معرف_المستأجر])
+  @@index([الحالة])
+  @@map("blocklist")
+}
+
+enum نوع_القائمة {
+  EasyList
+  EasyPrivacy
+  EasyListArabic
+  uBlockOrigin
+  AdGuard
+  مخصصة
+
+  @@map("list_type")
+}
+
+enum حالة_القائمة {
+  نشطة
+  معلقة
+  خطأ
+  مؤرشفة
+
+  @@map("list_status")
+}
+
+// ======================================================
+// قواعد التصفية (Filter Rules)
+// ======================================================
+model قاعدة_تصفية {
+  معرف               String            @id @default(cuid()) @map("id")
+  معرف_القائمة       String            @map("blocklist_id")
+  النمط              String            @map("pattern")
+  نوع_القاعدة        نوع_قاعدة_التصفية @map("rule_type")
+  الفئات             String[]          @map("categories")
+  خيارات_متقدمة      Json?             @map("advanced_options")
+  مُجمَّعة            Boolean           @default(false) @map("is_compiled")
+  رمز_DNR_المُجمَّع   String?           @map("compiled_dnr_json") // Declarative Net Request
+  وقت_التجميع_مللي   Int?              @map("compile_time_ms")
+  عدد_التطابقات      BigInt            @default(0) @map("match_count")
+  نشطة               Boolean           @default(true) @map("is_active")
+  تاريخ_الإنشاء      DateTime          @default(now()) @map("created_at")
+
+  القائمة            قائمة_الحجب       @relation(fields: [معرف_القائمة], references: [معرف])
+
+  @@index([معرف_القائمة])
+  @@index([نوع_القاعدة])
+  @@index([نشطة])
+  @@map("filter_rule")
+}
+
+enum نوع_قاعدة_التصفية {
+  حجب_شبكة        // Network block
+  حجب_عنصر_صفحة  // Cosmetic/element hiding
+  استثناء         // Exception/whitelist
+  إعادة_توجيه    // Redirect
+  تعديل_رأس       // Header modification
+  حقن_CSS        // CSS injection
+
+  @@map("filter_rule_type")
+}
+
+// ======================================================
+// سجلات الانحراف الشبكي (Network Deflection Logs)
+// ======================================================
+model سجل_انحراف {
+  معرف               String              @id @default(cuid()) @map("id")
+  معرف_المستأجر      String              @map("tenant_id")
+  الطلب_الأصلي       String              @map("original_url")
+  النطاق             String              @map("domain")
+  النوع              نوع_طلب_الشبكة      @map("request_type")
+  الإجراء            إجراء_الانحراف      @map("action")
+  معرف_القاعدة       String?             @map("matched_rule_id")
+  نمط_القاعدة        String?             @map("matched_pattern")
+  فئة_التهديد        فئة_التهديد?        @map("threat_category")
+  وقت_المعالجة_مكرو  Int                 @map("processing_time_microseconds")
+  حجم_البيانات_بايت  Int?                @map("data_size_bytes")
+  وفر_النطاق_ترددي   Int?                @map("bandwidth_saved_bytes")
+  عنوان_IP_مُخفى     Boolean             @default(true) @map("ip_anonymized")
+  الطابع_الزمني      DateTime            @default(now()) @map("timestamp")
+  بيانات_إضافية      Json?               @map("metadata")
+
+  المستأجر           مستأجر              @relation(fields: [معرف_المستأجر], references: [معرف])
+
+  @@index([معرف_المستأجر])
+  @@index([الطابع_الزمني])
+  @@index([النطاق])
+  @@index([الإجراء])
+  @@map("deflection_log")
+}
+
+enum نوع_طلب_الشبكة {
+  رئيسي          // main_frame
+  إطار_فرعي      // sub_frame
+  stylesheet
+  script
+  image
+  xmlhttprequest
+  websocket
+  media
+  font
+  other
+
+  @@map("network_request_type")
+}
+
+enum إجراء_الانحراف {
+  محجوب          // blocked
+  مُحوَّل         // redirected
+  مسموح_به       // allowed
+  معدَّل          // modified
+  مُخفى           // hidden (cosmetic)
+
+  @@map("deflection_action")
+}
+
+enum فئة_التهديد {
+  إعلانات
+  تتبع_المستخدم
+  تعدين_عملات
+  برمجيات_خبيثة
+  تصيد_احتيالي
+  شبكات_إعلانية
+  بصمات_رقمية
+  خادع
+
+  @@map("threat_category")
+}
+
+// ======================================================
+// مقاييس الأداء (Performance Metrics)
+// ======================================================
+model مقياس_أداء {
+  معرف                      String   @id @default(cuid()) @map("id")
+  معرف_المستأجر             String   @map("tenant_id")
+  عملية_التجميع             String   @map("compilation_operation")
+  حجم_الإدخال_بايت         BigInt   @map("input_size_bytes")
+  عدد_القواعد_المُعالَجة    Int      @map("rules_processed")
+  وقت_التجميع_كلي_مللي     Int      @map("total_compile_time_ms")
+  متوسط_وقت_قاعدة_مكرو    Float    @map("avg_rule_parse_time_microseconds")
+  استهلاك_الذاكرة_KB       Int      @map("memory_usage_kb")
+  نسبة_ضغط_القواعد         Float    @map("rule_compression_ratio")
+  قواعد_DNR_المُنتجة        Int      @map("dnr_rules_generated")
+  تحذيرات_التحقق            String[] @map("validation_warnings")
+  حالة_النجاح               Boolean  @default(true) @map("success")
+  الطابع_الزمني             DateTime @default(now()) @map("timestamp")
+
+  المستأجر                  مستأجر   @relation(fields: [معرف_المستأجر], references: [معرف])
+
+  @@index([معرف_المستأجر])
+  @@index([الطابع_الزمني])
+  @@map("performance_metric")
+}
+
+// ======================================================
+// سجلات المزامنة (Sync Logs)
+// ======================================================
+model سجل_مزامنة {
+  معرف                  String          @id @default(cuid()) @map("id")
+  معرف_المستأجر         String          @map("tenant_id")
+  معرف_القائمة          String          @map("blocklist_id")
+  حالة_المزامنة         حالة_المزامنة   @map("sync_status")
+  قواعد_قبل             Int             @default(0) @map("rules_before")
+  قواعد_بعد             Int             @default(0) @map("rules_after")
+  قواعد_مضافة           Int             @default(0) @map("rules_added")
+  قواعد_محذوفة          Int             @default(0) @map("rules_removed")
+  قواعد_معدلة           Int             @default(0) @map("rules_modified")
+  وقت_التنزيل_مللي      Int?            @map("download_time_ms")
+  وقت_التجميع_مللي      Int?            @map("compile_time_ms")
+  رسالة_الخطأ           String?         @map("error_message")
+  ETag                  String?         @map("etag")
+  تاريخ_البدء           DateTime        @default(now()) @map("started_at")
+  تاريخ_الانتهاء        DateTime?       @map("completed_at")
+
+  المستأجر              مستأجر          @relation(fields: [معرف_المستأجر], references: [معرف])
+  القائمة               قائمة_الحجب     @relation(fields: [معرف_القائمة], references: [معرف])
+
+  @@index([معرف_المستأجر])
+  @@index([معرف_القائمة])
+  @@index([تاريخ_البدء])
+  @@map("sync_log")
+}
+
+enum حالة_المزامنة {
+  جارية
+  مكتملة
+  فاشلة
+  ملغاة
+
+  @@map("sync_status")
+}
